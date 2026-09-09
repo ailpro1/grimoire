@@ -1,0 +1,181 @@
+# GRIMOIRE
+
+An 8-bit medieval keeper of **notes**, a **journal** and a **to-do board**, built as an
+installable PWA. Everything lives on your own device — there is no server, no account
+and no network call once the page has loaded.
+
+- **Scrolls** — notes, filed in **chambers** (folders) that nest as deep as you like
+- **Chronicle** — one journal entry per day, with a mood and a month calendar
+- **Quests** — to-dos with difficulty, due dates and sub-steps; finishing them earns XP
+- **The Keep** — the dashboard: level, rank, streak, what's due, what you wrote this week
+- Six themes, chiptune sound effects, a procedural background music loop, CRT scanlines
+- Backup and restore to a single `.json` file
+- Your name and portrait are yours to choose
+
+---
+
+## Running it on your iPhone
+
+The app is a folder of plain files. It needs to be served over HTTP, which the included
+PowerShell script does — no Node, no Python, no Administrator rights.
+
+### 1. Start the server on this PC
+
+Double-click **`start-server.bat`**, or run:
+
+```bash
+powershell -ExecutionPolicy Bypass -File serve.ps1
+```
+
+It prints something like:
+
+```
+On this PC       : http://localhost:8080
+On your iPhone   : http://192.168.1.42:8080
+```
+
+If port 8080 is taken, use another: `-Port 8081`.
+
+### 2. Open it in Safari on the iPhone
+
+Both devices need to be on the **same wi-fi**. Type the `192.168.x.x` address into
+**Safari** (Chrome on iOS cannot install web apps).
+
+If it doesn't load, Windows Firewall is probably blocking the port. Allow
+`powershell.exe` on private networks when prompted, or add a rule for the port.
+
+### 3. Add it to the Home Screen
+
+Share button → **Add to Home Screen** → **Add**.
+
+It now has its own icon and opens full screen with no browser bars.
+
+---
+
+## Offline: read this bit
+
+There are two levels of "works offline", and which one you get depends on how the files
+are served.
+
+| Served from | Add to Home Screen | Works with the PC off |
+|---|---|---|
+| `http://192.168.x.x:8080` (this script) | yes | **no** |
+| any `https://` address | yes | **yes** |
+
+Browsers only allow a *service worker* — the thing that caches an app for genuine
+offline use — on `https://` or `localhost`. Over a plain LAN address the app still
+installs and works, but it fetches its files from your PC each time it launches, so the
+PC has to be on and the server running.
+
+Your **data** is unaffected either way: notes, entries and quests are stored in the
+iPhone's own storage, not on the PC.
+
+**To get true offline use**, serve it from anywhere with HTTPS and install from that
+address instead. The service worker then registers and the app opens with the network
+off entirely — no PC, no wi-fi. Nothing about the app changes; it still talks to no
+server. It is just being *delivered* over HTTPS instead of HTTP.
+
+### GitHub Pages (recommended)
+
+The repo is its own host, so there is nothing to build or deploy.
+
+1. Push the repo to GitHub.
+2. **Settings → Pages → Source: Deploy from a branch**, branch `main`, folder `/ (root)`.
+3. Wait a minute, then open `https://<your-user>.github.io/<repo>/` in Safari on the
+   iPhone and **Add to Home Screen**.
+
+Everything in the app uses relative paths, so it works correctly from a subfolder URL
+like that.
+
+**A private repo works too** — but GitHub Pages on a private repo needs a paid plan. On
+the free plan the repo must be public for Pages to serve. That is fine for the app
+itself: it contains no data of yours. Your notes, entries and quests live only in your
+phone's storage and are never uploaded, so a public repo publishes the *program*, not
+your grimoire.
+
+Other drag-and-drop options that need no repo at all: [Netlify
+Drop](https://app.netlify.com/drop), Cloudflare Pages, Vercel.
+
+### Updating a hosted copy
+
+Once a service worker is active it serves the cached copy first, so after changing any
+app file bump `CACHE` at the top of [`sw.js`](sw.js) (`grimoire-v1` → `grimoire-v2`) in
+the same commit. Without that the phone keeps running the old version.
+
+---
+
+## Back up your grimoire
+
+iOS can clear a website's storage if the device runs very low on space, and clearing
+Safari's website data will certainly do it. So:
+
+**Options → Backup → Save a backup**
+
+On iPhone pick **Share / Save to Files** and drop the `.json` file into iCloud Drive.
+Restoring offers a choice of **merge** (keeps what's on the device, adds what's missing)
+or **replace** (exact restore). A safety snapshot is taken automatically before either,
+and before the "erase everything" option, and can be rolled back from
+**Options → Safety snapshots**.
+
+---
+
+## Files
+
+```
+index.html                 app shell
+manifest.webmanifest       PWA manifest
+sw.js                      service worker (offline cache)
+serve.ps1                  the local web server
+start-server.bat           double-click launcher for the above
+css/style.css              the whole 8-bit look, six themes, all animation
+js/
+  app.js                   boot, splash, onboarding, router, chrome
+  store.js                 data, the folder tree, XP/levels/streaks, backup
+  audio.js                 chiptune engine - every sound is synthesised
+  sprites.js               pixel art as ASCII maps, rendered to inline SVG
+  ui.js                    dialogs, action sheets, toasts, particles
+  actions.js               flows shared by views (create, move, menus)
+  views/                   dashboard, scrolls, editor, chronicle, quests,
+                           options, search
+assets/fonts/              Press Start 2P, Silkscreen, VT323 (bundled)
+icons/                     generated app icons
+tools/make-icons.ps1       redraws the icons from the same pixel map
+```
+
+There is no build step. Edit a file, reload the page.
+
+If you change any app file **and** you are serving over HTTPS with the service worker
+active, bump `CACHE` at the top of `sw.js` (`grimoire-v1` → `grimoire-v2`) or the old
+cached copy will keep being served.
+
+---
+
+## Notes on the internals
+
+**Nothing is loaded from the internet at runtime.** The fonts are bundled as `.woff2`.
+Every icon, portrait and app icon is drawn from a hand-written ASCII pixel map in
+`sprites.js` and rendered to inline SVG. Every sound is generated live with WebAudio
+oscillators — there are no audio files at all.
+
+**iOS and sound.** Safari keeps audio muted until the user physically taps something,
+which is what the *PRESS START* splash is for. If sound ever seems dead, use
+**Options → Test sound**.
+
+**Storage.** One `localStorage` key holds a single JSON document. The usual browser
+limit is around 5 MB, which is tens of thousands of scrolls. Current usage is shown in
+**Options → Storage used**.
+
+**Keyboard shortcuts** (useful when testing on a desktop): `1`–`5` switch tabs, `/`
+opens search.
+
+---
+
+## Fonts
+
+Bundled under the SIL Open Font License 1.1:
+
+- **Press Start 2P** — CodeMan38
+- **Silkscreen** — Jason Kottke
+- **VT323** — Peter Hull
+
+See `assets/fonts/OFL.txt`.

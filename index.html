@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en" data-theme="dungeon" class="scanlines crt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no, maximum-scale=1">
+<title>GRIMOIRE</title>
+<meta name="description" content="An 8-bit medieval keeper of notes, journals and quests. Runs offline on your own device.">
+
+<!-- iOS home-screen app -->
+<meta name="theme-color" content="#1a1226">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Grimoire">
+<meta name="format-detection" content="telephone=no,date=no,address=no,email=no">
+
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+
+<link rel="preload" href="assets/fonts/PressStart2P-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/VT323-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============ splash ============ -->
+<div id="boot" class="boot">
+  <div class="boot__inner">
+    <div id="boot-mark" class="boot__mark"></div>
+    <h1 class="boot__title">GRIMOIRE</h1>
+    <p class="boot__sub">scrolls &middot; chronicle &middot; quests</p>
+    <p class="boot__start">PRESS START</p>
+  </div>
+  <div class="boot__note">tap to wake the sound</div>
+</div>
+
+<!-- ============ app shell ============ -->
+<header id="topbar" class="topbar"></header>
+
+<main id="screen" class="screen" tabindex="-1"></main>
+
+<div id="fab" class="fab" hidden></div>
+
+<nav id="tabbar" class="tabbar" aria-label="Sections"></nav>
+
+<!-- overlay for the CRT effect; purely decorative -->
+<div class="crt-overlay" aria-hidden="true"></div>
+
+<script type="module" src="js/app.js"></script>
+<noscript>
+  <p style="padding:2rem;font-family:monospace;color:#eee;background:#1a1226">
+    GRIMOIRE needs JavaScript. Everything runs on your device - there is no server to talk to.
+  </p>
+</noscript>
+</body>
+</html>
