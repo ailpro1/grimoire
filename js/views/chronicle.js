@@ -6,6 +6,9 @@
 import * as S from '../store.js';
 import * as U from '../ui.js';
 import * as Au from '../audio.js';
+import * as TK from '../textkit.js';
+import * as MD from '../markup.js';
+import * as PH from '../photos.js';
 import { icon } from '../sprites.js';
 
 let viewMonth = S.todayISO().slice(0, 7);   // 'YYYY-MM'
@@ -111,13 +114,15 @@ function listView({ api }) {
       <div class="rows">
         ${entries.slice(0, 60).map((e) => {
           const mo = S.MOODS.find((x) => x.v === e.mood);
-          const preview = (e.body || '').replace(/\s+/g, ' ').slice(0, 70);
+          const preview = MD.plain(e.body).slice(0, 70);
+          const pics = (e.attachments || []).length;
           return `<div class="row row--entry" data-entry="${e.date}">
               <span class="row__mood mood-${e.mood}">${U.esc(mo?.face || '._.')}</span>
               <div class="row__main" data-openday="${e.date}">
                 <span class="row__title">${U.esc(e.title || S.prettyDate(e.date))}</span>
                 <span class="row__meta">
                   <em>${U.esc(S.prettyDate(e.date))}</em>
+                  ${pics ? `<em class="row__pics">${pics} photo${pics === 1 ? '' : 's'}</em>` : ''}
                   ${preview ? `<em class="row__preview">${U.esc(preview)}</em>` : ''}
                 </span>
               </div>
@@ -234,11 +239,22 @@ function dayView({ date, api }) {
         placeholder="A title for the day (optional)" value="${U.esc(e?.title || '')}"
         autocapitalize="sentences" enterkeyhint="next">
       <div class="editor__bar">
+        <button type="button" class="chip chip--mode" data-act="mode">
+          ${icon('glass', 2)}<span>Read</span>
+        </button>
         <span class="editor__status" id="j-status">${e ? 'saved' : 'not yet written'}</span>
       </div>
+
+      ${TK.runebar()}
+
       <textarea id="j-body" class="editor__body editor__body--tall"
         placeholder="What happened? What did you notice? What will you remember?"
         autocapitalize="sentences" spellcheck="true">${U.esc(e?.body || '')}</textarea>
+
+      <div class="md" id="j-read" hidden></div>
+
+      ${PH.galleryShell()}
+
       <div class="editor__foot">
         <span id="j-count">${words} word${words === 1 ? '' : 's'}</span>
         ${e ? `<span>edited ${U.esc(S.relTime(e.updatedAt))}</span>` : '<span>+15 XP on first save</span>'}
@@ -257,7 +273,11 @@ function dayView({ date, api }) {
       const body = root.querySelector('#j-body');
       const status = root.querySelector('#j-status');
       const count = root.querySelector('#j-count');
+      const reader = root.querySelector('#j-read');
+      const runes = root.querySelector('.runebar');
+      const modeChip = root.querySelector('[data-act="mode"]');
       let dirty = false;
+      let reading = false;
       let curMood = mood;
 
       const save = U.debounce(() => {
@@ -316,6 +336,48 @@ function dayView({ date, api }) {
         window.removeEventListener('pagehide', flush);
         document.removeEventListener('visibilitychange', flush);
       });
+
+      /* ---- rune bar, photos and the reader ---- */
+
+      TK.bindRunebar(root, body, {
+        onPhoto: async () => {
+          // an entry must exist before a picture can hang off it
+          if (!S.journalFor(date)) {
+            S.upsertJournal(date, { title: title.value, body: body.value, mood: curMood });
+          } else {
+            flush();
+          }
+          const added = await PH.attachFlow('journal', date);
+          if (added) await PH.mountGallery(root, 'journal', date);
+        },
+      });
+      TK.autoList(body);
+
+      PH.mountGallery(root, 'journal', date);
+
+      const drawReader = () => {
+        reader.innerHTML = MD.render(body.value);
+        reader.querySelectorAll('[data-task]').forEach((b) => {
+          b.addEventListener('click', () => {
+            const next = MD.toggleTask(body.value, Number(b.dataset.task));
+            if (next == null) return;
+            Au.play('check');
+            body.value = next;
+            onEdit();
+            drawReader();
+          });
+        });
+      };
+
+      U.bind(root, '[data-act="mode"]', () => {
+        reading = !reading;
+        body.hidden = reading;
+        runes.hidden = reading;
+        reader.hidden = !reading;
+        modeChip.classList.toggle('is-on', reading);
+        modeChip.querySelector('span').textContent = reading ? 'Write' : 'Read';
+        if (reading) { flush(); drawReader(); }
+      }, 'toggle');
 
       if (!e) setTimeout(() => body.focus(), 340);
     },

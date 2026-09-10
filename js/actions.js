@@ -338,6 +338,9 @@ export async function noteMenu(noteId, api, { fromEditor = false } = {}) {
         title: `${n.title || 'Untitled'} (copy)`,
         body: n.body,
       });
+      // both scrolls point at the same stored pictures - nothing is duplicated
+      // on disk, and a picture is only deleted once no scroll wants it
+      (n.attachments || []).forEach((a) => S.addAttachment('note', copy.id, { ...a }));
       U.notify.ok('Scroll copied');
       api?.refresh();
       break;

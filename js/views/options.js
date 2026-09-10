@@ -7,6 +7,7 @@ import * as S from '../store.js';
 import * as U from '../ui.js';
 import * as Au from '../audio.js';
 import * as Act from '../actions.js';
+import * as PH from '../photos.js';
 import { icon, avatar, AVATARS, AVATAR_NAMES } from '../sprites.js';
 
 export const THEMES = [
@@ -20,14 +21,31 @@ export const THEMES = [
 
 /* ---------- backup helpers ---------- */
 
-function backupFile() {
-  const json = S.exportJSON();
+async function backupFile({ photos = true } = {}) {
+  const json = JSON.stringify(await S.exportObjectWithMedia({ photos }), null, 2);
   const blob = new Blob([json], { type: 'application/json' });
   return { json, blob, name: S.backupFilename() };
 }
 
-async function shareBackup() {
-  const { blob, name, json } = backupFile();
+/** Photos make a backup much larger, so it is always a choice. */
+async function wantPhotos() {
+  const use = await PH.usage();
+  if (!use.count) return false;
+  const pick = await U.sheet({
+    title: 'Include the pictures?',
+    subtitle: `${use.count} photo${use.count === 1 ? '' : 's'} · ${S.fmtBytes(use.bytes)}`,
+    items: [
+      { id: 'yes', label: 'Yes, put them in the backup', icon: 'chest',
+        sub: 'A bigger file, but nothing is lost' },
+      { id: 'no', label: 'Text only', icon: 'scroll',
+        sub: 'Smaller file - the pictures stay on this device only' },
+    ],
+  });
+  return pick === 'yes';
+}
+
+async function shareBackup(photos) {
+  const { blob, name } = await backupFile({ photos });
   try {
     const file = new File([blob], name, { type: 'application/json' });
     if (navigator.canShare?.({ files: [file] })) {
@@ -40,11 +58,11 @@ async function shareBackup() {
   } catch (e) {
     if (e?.name === 'AbortError') return false;   // user cancelled - not an error
   }
-  return downloadBackup();
+  return downloadBackup(photos);
 }
 
-function downloadBackup() {
-  const { blob, name } = backupFile();
+async function downloadBackup(photos) {
+  const { blob, name } = await backupFile({ photos });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -93,7 +111,8 @@ async function importFlow(api) {
 
   const mode = await U.sheet({
     title: 'Backup looks good',
-    subtitle: `${sm.name} · ${sm.notes} scrolls · ${sm.quests} quests · ${sm.journal} entries`,
+    subtitle: `${sm.name} · ${sm.notes} scrolls · ${sm.quests} quests · ${sm.journal} entries${
+      sm.photos ? ` · ${sm.photos} photos` : ''}`,
     items: [
       { id: 'merge', label: 'Merge into this grimoire', icon: 'key',
         sub: 'Keeps what you have, adds what is missing' },
@@ -111,10 +130,12 @@ async function importFlow(api) {
     });
     if (!ok) return;
     S.restoreReplace(check.data);
+    await S.importMedia(parsed?.media);
     Au.play('fanfare');
     U.notify.ok('Grimoire restored');
   } else {
     S.restoreMerge(check.data);
+    await S.importMedia(parsed?.media);
     Au.play('fanfare');
     U.notify.ok('Backup merged in');
   }
@@ -317,7 +338,7 @@ export default function options({ api }) {
       <div class="orows">
         ${row('backup', 'chest', 'Save a backup', 'export .json')}
         ${row('restore', 'key', 'Restore a backup', 'merge or replace')}
-        ${row('copyjson', 'scroll', 'Copy backup text', S.fmtBytes(bytes))}
+        ${row('copyjson', 'scroll', 'Copy backup text', 'text only')}
         ${snaps.length ? row('snaps', 'clock', 'Safety snapshots', `${snaps.length} kept`) : ''}
       </div>
     </section>
@@ -327,7 +348,7 @@ export default function options({ api }) {
       <div class="orows">
         ${row('crypt', 'skull', 'The crypt', dead ? `${dead} scroll${dead === 1 ? '' : 's'}` : 'empty')}
         ${row('seed', 'book', 'Add the sample content', 'chambers, scrolls, quests')}
-        ${row('storage', 'coin', 'Storage used', S.fmtBytes(bytes))}
+        ${row('storage', 'coin', 'Storage used', `<span data-usage>${S.fmtBytes(bytes)}</span>`)}
         ${row('wipe', 'flame', 'Erase everything', 'start over', 'is-danger')}
       </div>
     </section>
@@ -357,6 +378,14 @@ export default function options({ api }) {
     tab: 'options',
     html,
     mount(root) {
+      /* the photo store lives in IndexedDB, so its size arrives late */
+      PH.usage().then((use) => {
+        const el = root.querySelector('[data-usage]');
+        if (el && use.count) {
+          el.textContent = `${S.fmtBytes(bytes + use.bytes)} · ${use.count} photo${use.count === 1 ? '' : 's'}`;
+        }
+      });
+
       /* toggles */
       U.bind(root, '[data-flag]', (el) => {
         const k = el.dataset.flag;
@@ -424,8 +453,11 @@ export default function options({ api }) {
                 { id: 'copy', label: 'Copy the text instead', icon: 'scroll' },
               ],
             });
-            if (choice === 'share') await shareBackup();
-            if (choice === 'download') downloadBackup();
+            if (choice === 'share' || choice === 'download') {
+              const photos = await wantPhotos();
+              if (choice === 'share') await shareBackup(photos);
+              else await downloadBackup(photos);
+            }
             if (choice === 'copy') { await Act.copyText(S.exportJSON()); S.markBackedUp(); }
             api.refresh();
             break;
@@ -467,17 +499,24 @@ export default function options({ api }) {
             break;
           }
 
-          case 'storage':
+          case 'storage': {
+            const use = await PH.usage();
             U.dialog({
               title: 'Storage', size: 'sm',
               render: `<p class="dlg-note">
-                Using <b>${S.fmtBytes(bytes)}</b> of this browser's local storage.
-                The usual limit is around 5 MB, which is tens of thousands of
-                scrolls - but iOS can clear it if the device runs very low on space,
+                Text is using <b>${S.fmtBytes(bytes)}</b> of this browser's local storage.
+                The usual limit there is around 5 MB, which is tens of thousands of
+                scrolls.</p>
+                <p class="dlg-note">Pictures are kept separately, in this device's
+                offline database: <b>${use.count} photo${use.count === 1 ? '' : 's'}</b>,
+                <b>${S.fmtBytes(use.bytes)}</b>. That store is far bigger, but it is still
+                only on this device.</p>
+                <p class="dlg-note">iOS can clear both if the device runs very low on space,
                 or if you clear Safari's website data. That is what backups are for.</p>`,
               buttons: [{ label: 'Got it', value: true, cls: 'btn--gold' }],
             });
             break;
+          }
 
           case 'wipe': {
             const one = await U.confirmBox({

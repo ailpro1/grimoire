@@ -8,6 +8,7 @@ import * as S from '../store.js';
 import * as U from '../ui.js';
 import * as A from '../audio.js';
 import * as Act from '../actions.js';
+import * as MD from '../markup.js';
 import { icon } from '../sprites.js';
 
 const expanded = new Set();   // folder ids open in tree mode
@@ -15,13 +16,15 @@ let query = '';
 
 function noteRow(n, { showPath = false } = {}) {
   const path = S.folderPath(n.folderId).map((f) => f.name).join(' / ') || 'Grimoire';
-  const preview = (n.body || '').replace(/\s+/g, ' ').slice(0, 68);
+  const preview = MD.plain(n.body).slice(0, 68);
+  const pics = (n.attachments || []).length;
   return `<div class="row row--note" data-note="${U.esc(n.id)}">
       <span class="row__ico">${icon(n.pinned ? 'star' : 'scroll', 2)}</span>
       <div class="row__main" data-opennote="${U.esc(n.id)}">
         <span class="row__title">${U.esc(n.title || 'Untitled scroll')}</span>
         <span class="row__meta">
           <em>${U.esc(S.relTime(n.updatedAt))}</em>
+          ${pics ? `<em class="row__pics">${pics} photo${pics === 1 ? '' : 's'}</em>` : ''}
           ${preview ? `<em class="row__preview">${U.esc(preview)}</em>` : ''}
           ${showPath ? `<em class="row__where">${U.esc(path)}</em>` : ''}
         </span>

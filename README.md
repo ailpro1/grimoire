@@ -6,6 +6,11 @@ and no network call once the page has loaded.
 
 - **Scrolls** — notes, filed in **chambers** (folders) that nest as deep as you like
 - **Chronicle** — one journal entry per day, with a mood and a month calendar
+- **Rune bar** — headings, bullets, numbered lists, tick boxes, quotes, dividers,
+  tables and a date & time stamp, in scrolls and chronicle entries alike; **READ**
+  lays it all out, and tick boxes can be ticked from there
+- **Pictures** — a few reference photos per scroll or entry, shrunk (and optionally
+  redrawn in the 8-bit palette) and kept in this device's offline database
 - **Quests** — to-dos with difficulty, due dates and sub-steps; finishing them earns XP
 - **The Keep** — the dashboard: level, rank, streak, what's due, what you wrote this week
 - Six themes, chiptune sound effects, a procedural background music loop, CRT scanlines
@@ -112,6 +117,8 @@ Safari's website data will certainly do it. So:
 **Options → Backup → Save a backup**
 
 On iPhone pick **Share / Save to Files** and drop the `.json` file into iCloud Drive.
+If any pictures are attached you are asked whether to include them: they make the file
+much larger, but leaving them out means the pictures exist on this device only.
 Restoring offers a choice of **merge** (keeps what's on the device, adds what's missing)
 or **replace** (exact restore). A safety snapshot is taken automatically before either,
 and before the "erase everything" option, and can be rolled back from
@@ -135,6 +142,10 @@ js/
   sprites.js               pixel art as ASCII maps, rendered to inline SVG
   ui.js                    dialogs, action sheets, toasts, particles
   actions.js               flows shared by views (create, move, menus)
+  textkit.js               the rune bar: list/table/date tools over a textarea
+  markup.js                the small plain-text markup the reader lays out
+  media.js                 photo shrinking, palette mapping, IndexedDB store
+  photos.js                attaching, the thumbnail strip and the viewer
   views/                   dashboard, scrolls, editor, chronicle, quests,
                            options, search
 assets/fonts/              Press Start 2P, Silkscreen, VT323 (bundled)
@@ -145,7 +156,7 @@ tools/make-icons.ps1       redraws the icons from the same pixel map
 There is no build step. Edit a file, reload the page.
 
 If you change any app file **and** you are serving over HTTPS with the service worker
-active, bump `CACHE` at the top of `sw.js` (`grimoire-v1` → `grimoire-v2`) or the old
+active, bump `CACHE` at the top of `sw.js` (`grimoire-v2` → `grimoire-v3`) or the old
 cached copy will keep being served.
 
 ---
@@ -162,8 +173,15 @@ which is what the *PRESS START* splash is for. If sound ever seems dead, use
 **Options → Test sound**.
 
 **Storage.** One `localStorage` key holds a single JSON document. The usual browser
-limit is around 5 MB, which is tens of thousands of scrolls. Current usage is shown in
-**Options → Storage used**.
+limit is around 5 MB, which is tens of thousands of scrolls. Photos would fill that in
+a handful of shots, so they live in a separate IndexedDB store (`grimoire.media`) and
+the JSON document keeps only a small record of what is attached to what. A picture with
+no scroll or entry pointing at it is deleted automatically. Current usage of both is
+shown in **Options → Storage used**.
+
+**Text stays text.** The rune bar writes plain characters (`- `, `1. `, `- [ ] `,
+`| a | b |`), so a scroll copied out of the app is still readable anywhere, and the
+markup is a deliberately small subset — no HTML is ever stored.
 
 **Keyboard shortcuts** (useful when testing on a desktop): `1`–`5` switch tabs, `/`
 opens search.
