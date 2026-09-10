@@ -201,6 +201,14 @@ shown in **Options → Storage used**.
 `| a | b |`), so a scroll copied out of the app is still readable anywhere, and the
 markup is a deliberately small subset — no HTML is ever stored.
 
+**The on-screen keyboard.** iOS shrinks the visual viewport but not the layout one,
+and the app is a fixed shell, so Safari's own attempt to reveal the caret just shoves
+everything upwards and off the screen. `installKeyboardHandling` in `app.js` handles it
+instead: the scrolling area and the dialog layer end above the keyboard, any shift
+Safari applied is put straight back, the field being typed in is parked below the top
+bar with its rune bar still visible, and a tall textarea is given an exact height for
+the room that is left, so it scrolls inside itself and the page never moves.
+
 **Keyboard shortcuts** (useful when testing on a desktop): `1`–`5` switch tabs, `/`
 opens search.
 

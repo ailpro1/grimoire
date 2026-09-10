@@ -556,7 +556,10 @@ ol, ul { margin: 0; padding-left: 1.4em; }
 
 .screen {
   position: fixed;
-  inset: 0;
+  top: 0; left: 0; right: 0;
+  /* the keyboard's height, so the scrolling area ends above it rather
+     than running underneath - see installKeyboardHandling in app.js */
+  bottom: var(--kb, 0px);
   z-index: 10;
   padding:
     calc(var(--bar-top) + var(--sat) + var(--pad))
@@ -638,7 +641,10 @@ body.is-locked .screen { overflow: hidden; }
    installKeyboardHandling in app.js) */
 body.kbd-open .tabbar { transform: translateY(110%); }
 body.kbd-open .fab { display: none; }
-body.kbd-open .screen { padding-bottom: calc(var(--kb, 0px) + 28px); }
+body.kbd-open .screen { padding-bottom: 20px; }
+/* the field being typed in is given an exact height inline by app.js,
+   min-height included - a rule here would collapse every other field
+   on the page as well */
 
 /* ---------------------------------------------------------------
    6. BOOT & ONBOARDING
@@ -1445,7 +1451,12 @@ body.kbd-open .screen { padding-bottom: calc(var(--kb, 0px) + 28px); }
   opacity: 0;
   transition: opacity 200ms;
 }
-.dlg-wrap, .sheet-wrap { position: fixed; inset: 0; z-index: 110; }
+.dlg-wrap, .sheet-wrap {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  bottom: var(--kb, 0px);      /* dialogs sit above the keyboard, not behind it */
+  z-index: 110;
+}
 .dlg-wrap.is-in .dlg-scrim, .sheet-wrap.is-in .dlg-scrim { opacity: 1; }
 
 .dlg-wrap { display: grid; place-items: center; padding: calc(20px + var(--sat)) 16px calc(20px + var(--sab)); }

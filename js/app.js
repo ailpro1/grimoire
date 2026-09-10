@@ -276,18 +276,105 @@ function splash({ firstRun }) {
 
 /* ---------- iOS keyboard handling ----------
    On iOS the on-screen keyboard shrinks the visual viewport but not
-   the layout viewport, so a fixed bottom bar ends up floating over
-   the text you are typing. Track the keyboard height, stow the tab
-   bar and the add button while typing, and keep the caret in view.
+   the layout viewport. The app is a fixed shell, so Safari's own
+   "reveal the caret" scroll cannot help - it just shoves the whole
+   shell upwards and the text disappears off the top. Instead:
+
+   - the scrolling area is shortened to the space above the keyboard
+     (--kb, used by .screen and the dialog layers)
+   - any layout-viewport shift Safari applies is put straight back
+   - the field being typed in is parked just below the top bar, and a
+     tall textarea is capped to the room that is left, so it scrolls
+     inside itself and the page never moves
 ------------------------------------------------------------------ */
 
 function installKeyboardHandling() {
   const vv = window.visualViewport;
+  const screen = document.getElementById('screen');
+  const topbar = document.getElementById('topbar');
+  const capped = new Set();
+  let fitTimer = null;
+
+  const isField = (el) => !!el && /^(INPUT|TEXTAREA)$/.test(el.tagName) &&
+    el.type !== 'range' && el.type !== 'file';
+
+  function uncap() {
+    capped.forEach((el) => {
+      el.style.height = '';
+      el.style.maxHeight = '';
+      el.style.minHeight = '';
+    });
+    capped.clear();
+  }
+
+  function fit() {
+    const el = document.activeElement;
+    if (!isField(el)) { uncap(); return; }
+
+    // undo any shift Safari applied to the layout viewport
+    if (window.scrollY || document.documentElement.scrollTop) {
+      window.scrollTo(0, 0);
+      document.documentElement.scrollTop = 0;
+    }
+
+    const inDialog = !!el.closest('.dlg, .sheet');
+    const vTop = vv ? vv.offsetTop : 0;
+    const vBottom = vTop + (vv ? vv.height : window.innerHeight);
+    const safeTop = inDialog ? vTop + 8
+      : Math.max(vTop, topbar.getBoundingClientRect().bottom) + 6;
+    const safeBottom = vBottom - 10;
+
+    let r = el.getBoundingClientRect();
+
+    // the rune bar belongs to the field below it, so keep it on screen
+    // too - the tools are no use scrolled off the top
+    const bar = el.previousElementSibling?.classList?.contains('runebar')
+      ? el.previousElementSibling : null;
+    const topOf = () => (bar ? bar.getBoundingClientRect().top : r.top);
+
+    // move the screen as little as possible: only when the field is
+    // hidden behind the top bar or behind the keyboard
+    if (!inDialog && screen) {
+      let delta = 0;
+      if (topOf() < safeTop) delta = topOf() - safeTop;
+      else if (r.bottom > safeBottom) delta = Math.min(r.bottom - safeBottom, topOf() - safeTop);
+      if (Math.abs(delta) > 2) {
+        screen.scrollTop += delta;
+        r = el.getBoundingClientRect();
+      }
+    }
+
+    if (el.tagName === 'TEXTAREA') {
+      // an exact height, not just a cap: the stylesheet's min-height is
+      // off while the keyboard is up, and without a height of its own a
+      // textarea falls back to two rows
+      const room = Math.round(safeBottom - r.top);
+      if (room > 120) {
+        el.style.minHeight = '0px';
+        el.style.height = `${room}px`;
+        el.style.maxHeight = `${room}px`;
+        capped.add(el);
+      } else {
+        el.style.height = '';
+        el.style.maxHeight = '';
+        el.style.minHeight = '';
+        capped.delete(el);
+      }
+    }
+  }
+
+  const scheduleFit = (delay = 60) => {
+    clearTimeout(fitTimer);
+    fitTimer = setTimeout(fit, delay);
+  };
+
   if (vv) {
     const onResize = () => {
       const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
       document.documentElement.style.setProperty('--kb', `${Math.round(kb)}px`);
       document.body.classList.toggle('kbd-open', kb > 80);
+      if (kb <= 80) uncap();
+      scheduleFit();
     };
     vv.addEventListener('resize', onResize);
     vv.addEventListener('scroll', onResize);
@@ -295,19 +382,18 @@ function installKeyboardHandling() {
   }
 
   document.addEventListener('focusin', (e) => {
-    const t = e.target;
-    if (!t || !/^(INPUT|TEXTAREA)$/.test(t.tagName)) return;
-    if (t.type === 'range' || t.type === 'file') return;
-    // give the keyboard time to finish sliding up before scrolling
-    setTimeout(() => {
-      try { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch { /* ignore */ }
-    }, 340);
+    if (!isField(e.target)) return;
+    // the keyboard slides up over about a third of a second, and the
+    // viewport only settles at the end of it
+    scheduleFit(80);
+    setTimeout(fit, 380);
+    setTimeout(fit, 650);
   });
 
   document.addEventListener('focusout', () => {
+    uncap();
     setTimeout(() => {
-      const a = document.activeElement;
-      if (!a || !/^(INPUT|TEXTAREA)$/.test(a.tagName)) {
+      if (!isField(document.activeElement)) {
         document.body.classList.remove('kbd-open');
       }
     }, 120);
