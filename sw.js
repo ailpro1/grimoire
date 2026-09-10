@@ -11,7 +11,7 @@
    keep being served.
    ============================================================ */
 
-const CACHE = 'grimoire-v1';
+const CACHE = 'grimoire-v2';
 
 const SHELL = [
   './',
@@ -24,6 +24,10 @@ const SHELL = [
   './js/ui.js',
   './js/sprites.js',
   './js/actions.js',
+  './js/textkit.js',
+  './js/markup.js',
+  './js/media.js',
+  './js/photos.js',
   './js/views/dashboard.js',
   './js/views/scrolls.js',
   './js/views/editor.js',

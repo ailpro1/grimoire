@@ -7,7 +7,7 @@
 const KEY = 'grimoire.db.v2';
 const SNAP_KEY = 'grimoire.snapshots.v1';
 const LEGACY_KEYS = ['grimoire.db.v1'];
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 /* ---------- small utils ---------- */
 
@@ -175,6 +175,9 @@ function migrate(raw) {
   out.stats.history = out.stats.history || {};
   // v1 -> v2: quests gained subtasks[]
   out.quests.forEach((q) => { if (!Array.isArray(q.subtasks)) q.subtasks = []; });
+  // v2 -> v3: scrolls and chronicle entries gained photo attachments
+  out.notes.forEach((n) => { if (!Array.isArray(n.attachments)) n.attachments = []; });
+  out.journal.forEach((e) => { if (!Array.isArray(e.attachments)) e.attachments = []; });
   out.version = DB_VERSION;
   return out;
 }
@@ -386,6 +389,7 @@ export function deleteFolder(id, mode = 'cascade') {
     db.quests = db.quests.filter((q) => !kill.has(q.folderId));
   }
   commit();
+  sweepMedia();
 }
 
 export function folderCounts(id) {
@@ -422,7 +426,7 @@ export function createNote({ folderId = null, title = '', body = '' } = {}) {
   const n = {
     id: uid(), folderId: folderId || null,
     title: title.slice(0, 120), body,
-    tags: [], pinned: false, trashed: false,
+    tags: [], pinned: false, trashed: false, attachments: [],
     createdAt: Date.now(), updatedAt: Date.now(),
   };
   db.notes.unshift(n);
@@ -460,16 +464,67 @@ export function restoreNote(id) {
 export function destroyNote(id) {
   db.notes = db.notes.filter((n) => n.id !== id);
   commit();
+  sweepMedia();
 }
 
 export function emptyTrash() {
   db.notes = db.notes.filter((n) => !n.trashed);
   commit();
+  sweepMedia();
 }
 
 export function trashedNotes() {
   return db.notes.filter((n) => n.trashed)
     .sort((a, b) => (b.trashedAt || 0) - (a.trashedAt || 0));
+}
+
+/* ---------- photo attachments ----------
+   The pictures themselves live in IndexedDB (see media.js);
+   the grimoire only keeps a small record of what is attached
+   to what, so localStorage stays tiny.
+------------------------------------------------------------ */
+
+function holder(kind, id) {
+  return kind === 'journal' ? journalFor(id) : note(id);
+}
+
+export function attachmentsOf(kind, id) {
+  const rec = holder(kind, id);
+  return rec && Array.isArray(rec.attachments) ? rec.attachments : [];
+}
+
+export function addAttachment(kind, id, meta) {
+  const rec = holder(kind, id);
+  if (!rec) return null;
+  if (!Array.isArray(rec.attachments)) rec.attachments = [];
+  rec.attachments.push(meta);
+  rec.updatedAt = Date.now();
+  commit();
+  return meta;
+}
+
+export function removeAttachment(kind, id, mediaId) {
+  const rec = holder(kind, id);
+  if (!rec) return;
+  rec.attachments = (rec.attachments || []).filter((a) => a.id !== mediaId);
+  rec.updatedAt = Date.now();
+  commit();
+  sweepMedia();
+}
+
+/** Every media id the grimoire still points at. */
+export function usedMediaIds() {
+  const ids = new Set();
+  db.notes.forEach((n) => (n.attachments || []).forEach((a) => ids.add(a.id)));
+  db.journal.forEach((e) => (e.attachments || []).forEach((a) => ids.add(a.id)));
+  return ids;
+}
+
+/** Drops orphaned pictures. Fire and forget - never blocks a save. */
+export function sweepMedia() {
+  import('./media.js')
+    .then((m) => m.gc(usedMediaIds()))
+    .catch(() => { /* no IndexedDB - nothing to sweep */ });
 }
 
 /* ---------- quests (to-dos) ---------- */
@@ -591,7 +646,7 @@ export function upsertJournal(date, patch) {
   const fresh = !e;
   if (!e) {
     e = {
-      id: uid(), date, title: '', body: '', mood: 3,
+      id: uid(), date, title: '', body: '', mood: 3, attachments: [],
       createdAt: Date.now(), updatedAt: Date.now(),
     };
     db.journal.push(e);
@@ -610,6 +665,7 @@ export function deleteJournal(date) {
   db.journal = db.journal.filter((e) => e.date !== date);
   db.stats.journalDays = Math.max(0, (db.stats.journalDays || 0) - 1);
   commit();
+  sweepMedia();
 }
 
 /* ---------- profile & settings ---------- */
@@ -710,6 +766,31 @@ export function exportJSON() {
   return JSON.stringify(exportObject(), null, 2);
 }
 
+/**
+ * Backup including the photos, which live outside localStorage.
+ * Photos make a backup much bigger, so the caller decides.
+ */
+export async function exportObjectWithMedia({ photos = true } = {}) {
+  const out = exportObject();
+  if (!photos) return out;
+  try {
+    const m = await import('./media.js');
+    const used = usedMediaIds();
+    const list = await m.all();
+    out.media = list.filter((r) => used.has(r.id));
+  } catch { out.media = []; }
+  return out;
+}
+
+/** Writes any photos carried by a backup back into IndexedDB. */
+export async function importMedia(list) {
+  if (!Array.isArray(list) || !list.length) return 0;
+  try {
+    const m = await import('./media.js');
+    return await m.importAll(list);
+  } catch { return 0; }
+}
+
 export function backupFilename() {
   const d = new Date();
   const who = (db.profile.name || 'hero').toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -739,6 +820,7 @@ export function inspectBackup(parsed) {
         journal: (payload.journal || []).length,
         folders: (payload.folders || []).length,
         xp: payload.profile?.xp || 0,
+        photos: Array.isArray(parsed?.media) ? parsed.media.length : 0,
         exportedAt: parsed?.exportedAt || null,
       },
     };
@@ -762,6 +844,7 @@ export function restoreReplace(payload) {
   db = migrate(unwrap(payload));
   saveNow();
   listeners.forEach((fn) => fn(db));
+  sweepMedia();
 }
 
 /** Union merge - keeps both sides, newest wins on id collisions. */
@@ -839,6 +922,7 @@ export function wipeEverything() {
   db = defaultDB();
   saveNow();
   listeners.forEach((fn) => fn(db));
+  sweepMedia();
 }
 
 /* ---------- sample content for a brand-new grimoire ---------- */
