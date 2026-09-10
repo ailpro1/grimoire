@@ -103,9 +103,26 @@ Drop](https://app.netlify.com/drop), Cloudflare Pages, Vercel.
 
 ### Updating a hosted copy
 
-Once a service worker is active it serves the cached copy first, so after changing any
-app file bump `CACHE` at the top of [`sw.js`](sw.js) (`grimoire-v1` → `grimoire-v2`) in
-the same commit. Without that the phone keeps running the old version.
+Push the change. Installed phones pick it up by themselves — there is nothing to bump
+and nothing to reinstall.
+
+The app checks the server each time it opens, whenever you come back to it after ten
+minutes away, when the network returns, and every half hour while it is open. It
+compares a SHA-256 of every code file with what it has cached, so any edit is noticed
+without a version number anywhere.
+
+- found **at launch**: applied there and then, before anything is on screen
+- found **while you are writing**: it asks first, and "Later" means next launch
+
+Nothing you have written is touched — a pending save is written to disk before the
+reload. **Options → Updates** shows the state, holds a manual check, and can turn the
+automatic part off. The build shown in **Options → About** is that fingerprint.
+
+This needs HTTPS (or localhost), like the offline cache — over a plain `http://` LAN
+address there is no service worker, so a reload in Safari is the update.
+
+`CACHE` at the top of [`sw.js`](sw.js) only needs bumping when the worker's own caching
+rules change, not for ordinary app edits.
 
 ---
 
@@ -146,6 +163,7 @@ js/
   markup.js                the small plain-text markup the reader lays out
   media.js                 photo shrinking, palette mapping, IndexedDB store
   photos.js                attaching, the thumbnail strip and the viewer
+  update.js                the update check, prompt and reload
   views/                   dashboard, scrolls, editor, chronicle, quests,
                            options, search
 assets/fonts/              Press Start 2P, Silkscreen, VT323 (bundled)

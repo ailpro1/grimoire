@@ -6,6 +6,7 @@
 import * as S from './store.js';
 import * as Au from './audio.js';
 import * as U from './ui.js';
+import * as Update from './update.js';
 import { icon, avatar, tome, AVATARS, AVATAR_NAMES } from './sprites.js';
 
 import dashboard from './views/dashboard.js';
@@ -313,21 +314,6 @@ function installKeyboardHandling() {
   });
 }
 
-/* ---------- service worker ---------- */
-
-function registerSW() {
-  if (!('serviceWorker' in navigator)) return;
-  if (!window.isSecureContext) {
-    console.info('[grimoire] not a secure context - offline cache disabled. ' +
-      'Serve over https (or localhost) for full offline use.');
-    return;
-  }
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch((e) =>
-      console.warn('[grimoire] service worker failed', e));
-  });
-}
-
 /* ---------- boot ---------- */
 
 async function boot() {
@@ -379,6 +365,9 @@ async function boot() {
   // a nudge to back up, at most once a week and never on day one
   maybeNagBackup();
 
+  // keep an installed copy current: checks now, on resume, and hourly
+  Update.start();
+
   if (!location.hash) location.hash = '#/keep';
   render();
 
@@ -415,5 +404,4 @@ function maybeNagBackup() {
   }, 2600);
 }
 
-registerSW();
 document.addEventListener('DOMContentLoaded', boot, { once: true });

@@ -8,6 +8,7 @@ import * as U from '../ui.js';
 import * as Au from '../audio.js';
 import * as Act from '../actions.js';
 import * as PH from '../photos.js';
+import * as Update from '../update.js';
 import { icon, avatar, AVATARS, AVATAR_NAMES } from '../sprites.js';
 
 export const THEMES = [
@@ -18,6 +19,18 @@ export const THEMES = [
   { id: 'parchment', label: 'Parchment', swatch: ['#e8dcbf', '#7a4a24', '#9c2b26'] },
   { id: 'void',      label: 'The Void',  swatch: ['#0b0b10', '#c9a0ff', '#5ce1e6'] },
 ];
+
+/* ---------- update helpers ---------- */
+
+function updateLabel(up) {
+  if (up.status === 'unsupported') return 'needs https';
+  if (up.status === 'ready') return 'update ready';
+  if (up.status === 'offline') return 'no connection';
+  if (up.status === 'current') {
+    return up.lastCheckAt ? `up to date · ${S.relTime(up.lastCheckAt)}` : 'up to date';
+  }
+  return 'tap to check';
+}
 
 /* ---------- backup helpers ---------- */
 
@@ -250,6 +263,7 @@ export default function options({ api }) {
   const dead = S.trashedNotes().length;
   const standalone = window.navigator.standalone === true ||
     window.matchMedia('(display-mode: standalone)').matches;
+  const up = Update.info();
 
   const row = (act, ic, label, value = '', tone = '') => `
     <button type="button" class="orow ${tone}" data-act="${act}">
@@ -354,15 +368,31 @@ export default function options({ api }) {
     </section>
 
     <section class="panel px px-cut">
+      <header class="panel__head"><h2>${icon('clock', 2)} Updates</h2></header>
+      <p class="panel__note">
+        The installed app looks for a new version each time it opens, when you
+        come back to it, and now and then while it is open. Nothing you have
+        written is touched by an update.
+      </p>
+      <div class="orows">
+        ${toggle('autoUpdate', 'star', 'Update automatically',
+          'apply a new version at launch, ask while you are working')}
+        ${row('update', 'clock', 'Check for updates', `<span data-updstate>${U.esc(updateLabel(up))}</span>`)}
+      </div>
+    </section>
+
+    <section class="panel px px-cut">
       <header class="panel__head"><h2>${icon('book', 2)} About</h2></header>
       <div class="about">
         <div class="about__mark">${icon('book', 4)}</div>
-        <p><b>GRIMOIRE</b> v1.0</p>
+        <p><b>GRIMOIRE</b> v1.1</p>
         <p class="about__sub">A notes, journal and quest keeper for one person and one device.</p>
         <p class="about__meta">
           ${standalone ? 'Running as an installed app.' : 'Running in the browser.'}
           ${'serviceWorker' in navigator && navigator.serviceWorker.controller
             ? ' Offline cache active.' : ' Offline cache not active.'}
+          ${up.build ? ` Build <b data-build>${U.esc(up.build)}</b>${
+            up.updatedAt ? `, installed ${U.esc(S.relTime(up.updatedAt))}` : ''}.` : ''}
         </p>
         <button type="button" class="btn btn--ghost btn--wide" data-act="install">
           How to install on iPhone
@@ -484,6 +514,15 @@ export default function options({ api }) {
             if (ok && S.restoreSnapshot(Number(pick))) {
               Au.play('fanfare'); U.notify.ok('Rolled back'); api.syncChrome(); api.refresh();
             }
+            break;
+          }
+
+          case 'update': {
+            const cell = el.querySelector('[data-updstate]');
+            if (cell) cell.textContent = 'checking...';
+            const status = await Update.check({ manual: true });
+            if (cell) cell.textContent = updateLabel(Update.info());
+            if (status === 'ready') break;   // the update flow takes over
             break;
           }
 

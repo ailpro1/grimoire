@@ -139,6 +139,7 @@ function defaultDB() {
     settings: {
       sfx: true, music: false, volume: 0.55, theme: 'dungeon',
       crt: true, scanlines: true, motion: true, autoBackupNag: true,
+      autoUpdate: true,
       firstRun: true, lastBackupAt: 0, startTab: 'dashboard',
     },
     folders: [],
@@ -157,7 +158,19 @@ function defaultDB() {
 
 let db = null;
 let saveTimer = null;
+let savePending = false;
+let unloading = false;
 const listeners = new Set();
+
+/* Nothing waits for a timer once the page is leaving or being hidden -
+   an iOS app switch, a tab close, or a reload for an update. */
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', () => { unloading = true; flushPending(); });
+  window.addEventListener('pageshow', () => { unloading = false; });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPending();
+  });
+}
 
 function migrate(raw) {
   const base = defaultDB();
@@ -208,6 +221,7 @@ export function get() {
 export function saveNow() {
   try {
     localStorage.setItem(KEY, JSON.stringify(db));
+    savePending = false;
     return true;
   } catch (e) {
     console.error('[grimoire] save failed', e);
@@ -218,8 +232,20 @@ export function saveNow() {
 /** Debounced save + notify subscribers. */
 export function commit(opts = {}) {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveNow, opts.immediate ? 0 : 220);
+  savePending = true;
+  // While the page is going away there is no later: write now, or the
+  // last keystrokes are gone. Views flush their text on pagehide too,
+  // and their handlers run after the one installed below.
+  if (unloading || opts.immediate) { saveNow(); }
+  else saveTimer = setTimeout(saveNow, 220);
   if (opts.silent !== true) listeners.forEach((fn) => fn(db));
+}
+
+/** Writes any pending save right now. */
+export function flushPending() {
+  if (!savePending) return false;
+  clearTimeout(saveTimer);
+  return saveNow();
 }
 
 export function subscribe(fn) {
