@@ -295,8 +295,9 @@ function installKeyboardHandling() {
   const capped = new Set();
   let fitTimer = null;
 
-  const isField = (el) => !!el && /^(INPUT|TEXTAREA)$/.test(el.tagName) &&
-    el.type !== 'range' && el.type !== 'file';
+  const isField = (el) => !!el &&
+    ((/^(INPUT|TEXTAREA)$/.test(el.tagName) && el.type !== 'range' && el.type !== 'file') ||
+     el.isContentEditable === true);
 
   function uncap() {
     capped.forEach((el) => {
@@ -344,10 +345,9 @@ function installKeyboardHandling() {
       }
     }
 
-    if (el.tagName === 'TEXTAREA') {
-      // an exact height, not just a cap: the stylesheet's min-height is
-      // off while the keyboard is up, and without a height of its own a
-      // textarea falls back to two rows
+    if (el.tagName === 'TEXTAREA' || el.isContentEditable) {
+      // an exact height, not just a cap: the field then scrolls inside
+      // itself, and the caret is kept in view by the browser
       const room = Math.round(safeBottom - r.top);
       if (room > 120) {
         el.style.minHeight = '0px';
@@ -460,8 +460,12 @@ async function boot() {
   // keyboard shortcuts help on desktop; harmless on iOS
   document.addEventListener('keydown', (e) => {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    const tag = document.activeElement?.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    // never while something is being written or a dialog is up: the
+    // editors are contenteditable, so a typed "2" is a two, not a tab
+    const a = document.activeElement;
+    if (a?.isContentEditable) return;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(a?.tagName || '')) return;
+    if (document.body.classList.contains('is-locked')) return;
     const map = { 1: '#/keep', 2: '#/scrolls', 3: '#/chronicle', 4: '#/quests', 5: '#/options' };
     if (map[e.key]) { api.go(map[e.key]); Au.play('tab'); }
     if (e.key === '/') { e.preventDefault(); api.go('#/search'); }

@@ -1,115 +1,20 @@
 /* ============================================================
    GRIMOIRE - textkit.js
-   The rune bar: bullets, numbers, tasks, headings, quotes,
-   rules, tables and a date & time stamp, all written straight
-   into the textarea as plain text so nothing is ever locked
-   inside a rich-text format.
+   The rune bar. Every button acts on the text there and then -
+   a bullet becomes a bullet, a table becomes a table. There is
+   no markup to type and no reading mode to switch to; what is
+   written to disk is still plain text (see richtext.js).
    ============================================================ */
 
 import * as S from './store.js';
 import * as U from './ui.js';
 import * as Au from './audio.js';
+import * as R from './richtext.js';
 import { icon } from './sprites.js';
-
-/* ---------- textarea surgery ---------- */
-
-/** Writes text over the current selection, keeping native undo where we can. */
-function put(ta, text, { start = null, end = null, caret = null, select = null } = {}) {
-  const s = start ?? ta.selectionStart;
-  const e = end ?? ta.selectionEnd;
-  ta.focus();
-  ta.setSelectionRange(s, e);
-  let ok = false;
-  try { ok = document.execCommand('insertText', false, text); } catch { ok = false; }
-  if (!ok) {
-    const before = ta.value.slice(0, s);
-    const after = ta.value.slice(e);
-    ta.value = before + text + after;
-  }
-  if (select) ta.setSelectionRange(s + select[0], s + select[1]);
-  else {
-    const pos = caret == null ? s + text.length : s + caret;
-    ta.setSelectionRange(pos, pos);
-  }
-  ta.dispatchEvent(new Event('input', { bubbles: true }));
-}
-
-/** Start/end of the whole lines the selection touches. */
-function lineRange(ta) {
-  const v = ta.value;
-  let s = v.lastIndexOf('\n', ta.selectionStart - 1) + 1;
-  let e = v.indexOf('\n', ta.selectionEnd);
-  if (e === -1) e = v.length;
-  return { s, e, lines: v.slice(s, e).split('\n') };
-}
-
-const PREFIX_RE = /^(\s*)(?:[-*]\s\[[ xX]\]\s?|[-*]\s+|\d+[.)]\s+|>\s?|#{1,3}\s+)/;
-
-function stripPrefix(line) {
-  const m = PREFIX_RE.exec(line);
-  return m ? m[1] + line.slice(m[0].length) : line;
-}
-
-/**
- * Adds a line prefix to every selected line, or takes it off again
- * when they all have it already. `prefix` may be a function of index.
- */
-function toggleLines(ta, prefix, test) {
-  const { s, e, lines } = lineRange(ta);
-  const written = lines.filter((l) => l.trim());
-  // an empty line always gets the prefix; a set of written lines only
-  // loses it when every one of them already has it
-  const on = written.length > 0 && written.every(test);
-  const next = lines.map((l, i) => {
-    if (!l.trim() && written.length) return l;
-    const bare = stripPrefix(l);
-    if (on) return bare;
-    const indent = /^\s*/.exec(bare)[0];
-    return indent + (typeof prefix === 'function' ? prefix(i) : prefix) + bare.slice(indent.length);
-  });
-  put(ta, next.join('\n'), { start: s, end: e });
-  return !on;
-}
-
-function wrap(ta, before, after = before, placeholder = 'text') {
-  let s = ta.selectionStart, e = ta.selectionEnd;
-  // nothing selected but the caret sits in a word - emphasise that word,
-  // which is how anyone actually uses this on a phone
-  if (s === e) {
-    const v = ta.value;
-    let a = s, b = s;
-    while (a > 0 && /\S/.test(v[a - 1])) a--;
-    while (b < v.length && /\S/.test(v[b])) b++;
-    if (b > a) { s = a; e = b; }
-  }
-  const sel = ta.value.slice(s, e);
-  if (sel) put(ta, before + sel + after, { start: s, end: e });
-  // nothing selected: drop in a placeholder and select it, so the
-  // next keystroke replaces the word rather than landing beside it
-  else put(ta, before + placeholder + after,
-    { start: s, end: e, select: [before.length, before.length + placeholder.length] });
-}
-
-/** Drops a block on its own lines below the caret. */
-function block(ta, text) {
-  const s = ta.selectionStart;
-  const lead = s === 0 || ta.value[s - 1] === '\n' ? '' : '\n';
-  put(ta, `${lead}${text}\n`, { start: s, end: ta.selectionEnd });
-}
 
 /* ---------- table builder ---------- */
 
-function tableText(rows, cols, headers) {
-  const width = 10;
-  const pad = (t) => ` ${String(t).padEnd(width - 2)} `;
-  const head = `|${headers.slice(0, cols).map(pad).join('|')}|`;
-  const rule = `|${Array.from({ length: cols }, () => '-'.repeat(width)).join('|')}|`;
-  const body = Array.from({ length: rows }, () =>
-    `|${Array.from({ length: cols }, () => pad('')).join('|')}|`);
-  return [head, rule, ...body].join('\n');
-}
-
-async function tableFlow(ta) {
+async function tableFlow(el) {
   const spec = await U.dialog({
     title: 'Build a table',
     size: 'md',
@@ -130,14 +35,15 @@ async function tableFlow(ta) {
         <label class="field__label" for="tb-head">Column headings (comma separated)</label>
         <input id="tb-head" class="field" type="text" placeholder="Part, Qty, Note"
           autocapitalize="words" autocomplete="off">
-        <p class="field__hint">A plain-text table. It lines up in the reader.</p>`;
+        <p class="field__hint">Tap any cell afterwards to fill it in. The table
+        button offers rows and columns once the caret is inside one.</p>`;
 
       body.querySelectorAll('.stepper').forEach((st) => {
         const n = st.querySelector('.stepper__n');
         st.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
           Au.play('move');
-          const min = 1, max = st.dataset.k === 'cols' ? 6 : 20;
-          n.textContent = String(Math.max(min, Math.min(max, Number(n.textContent) + Number(b.dataset.step))));
+          const max = st.dataset.k === 'cols' ? 6 : 20;
+          n.textContent = String(Math.max(1, Math.min(max, Number(n.textContent) + Number(b.dataset.step))));
         }));
       });
     },
@@ -152,9 +58,28 @@ async function tableFlow(ta) {
     ],
   });
   if (!spec) return;
-  const heads = Array.from({ length: spec.cols }, (_, i) => spec.heads[i] || `Col ${i + 1}`);
-  block(ta, tableText(spec.rows, spec.cols, heads));
+  R.insertBlock(el, R.tableHTML(spec.rows, spec.cols, spec.heads));
   Au.play('chest');
+}
+
+async function tableMenu(el) {
+  const choice = await U.sheet({
+    title: 'This table',
+    items: [
+      { id: 'row', label: 'Add a row below', icon: 'scroll' },
+      { id: 'col', label: 'Add a column right', icon: 'scroll' },
+      null,
+      { id: 'delrow', label: 'Delete this row', icon: 'skull', tone: 'danger' },
+      { id: 'delcol', label: 'Delete this column', icon: 'skull', tone: 'danger' },
+      null,
+      { id: 'new', label: 'Insert another table', icon: 'chest' },
+    ],
+  });
+  if (!choice) return false;
+  if (choice === 'new') { await tableFlow(el); return true; }
+  const ok = R.tableOp(el, choice);
+  if (!ok) U.notify.warn('That is the last one - it has to stay');
+  return ok;
 }
 
 /* ---------- date & time stamp ---------- */
@@ -185,7 +110,6 @@ function stampText(iso, time, style) {
 
 /** Date & time picker. Resolves to the text to insert, or null. */
 export function pickStamp({ title = 'Date & time' } = {}) {
-  const now = new Date();
   return U.dialog({
     title,
     size: 'md',
@@ -271,21 +195,21 @@ export function pickStamp({ title = 'Date & time' } = {}) {
   }).then((v) => (v == null ? null : v));
 }
 
-/* ---------- the bar itself ---------- */
+/* ---------- the bar ---------- */
 
 const TOOLS = [
-  { id: 'head',   label: 'H',     aria: 'Heading' },
-  { id: 'bold',   label: 'B',     aria: 'Bold', cls: 'is-bold' },
-  { id: 'ital',   label: 'I',     aria: 'Italic', cls: 'is-ital' },
+  { id: 'head',   label: 'Title',  aria: 'Heading' },
+  { id: 'bold',   label: 'B',      aria: 'Bold', cls: 'is-bold' },
+  { id: 'ital',   label: 'I',      aria: 'Italic', cls: 'is-ital' },
   { id: 'bullet', label: '• List', aria: 'Bullet list' },
   { id: 'number', label: '1. List', aria: 'Numbered list' },
-  { id: 'task',   label: '☑ Task', aria: 'Checklist' },
+  { id: 'task',   label: '☑ Task', aria: 'Tick boxes' },
   { id: 'quote',  label: '“ Quote', aria: 'Quote' },
   { id: 'table',  label: '▦ Table', aria: 'Table' },
   { id: 'rule',   label: '— Line', aria: 'Divider' },
-  { id: 'stamp',  label: 'Date', aria: 'Date and time', icon: 'clock' },
-  { id: 'photo',  label: 'Photo', aria: 'Attach a photo', icon: 'chest' },
-  { id: 'help',   label: '?', aria: 'What the runes do' },
+  { id: 'stamp',  label: 'Date',   aria: 'Date and time', icon: 'clock' },
+  { id: 'photo',  label: 'Photo',  aria: 'Attach a photo', icon: 'chest' },
+  { id: 'help',   label: '?',      aria: 'What the runes do' },
 ];
 
 export function runebar({ photos = true } = {}) {
@@ -303,85 +227,63 @@ function helpDialog() {
     title: 'The runes',
     size: 'lg',
     render: `<div class="md md--help">
-        <p class="md__p">Everything is stored as plain text, so a scroll stays readable
-        anywhere. Tap <b>READ</b> to see it laid out.</p>
-        <table class="md__table">
-          <thead><tr><th>You write</th><th>You get</th></tr></thead>
-          <tbody>
-            <tr><td># Title</td><td>a heading</td></tr>
-            <tr><td>- milk</td><td>a bullet</td></tr>
-            <tr><td>1. first</td><td>a numbered list</td></tr>
-            <tr><td>- [ ] job</td><td>a tickable box</td></tr>
-            <tr><td>&gt; said the king</td><td>a quote</td></tr>
-            <tr><td>---</td><td>a divider</td></tr>
-            <tr><td>| a | b |</td><td>a table row</td></tr>
-            <tr><td>**bold** *italic*</td><td>emphasis</td></tr>
-          </tbody>
-        </table>
+        <p class="md__p">Put the caret where you want it, or select some words,
+        then tap a rune. What you see is what the scroll is.</p>
+        <ul class="md__list">
+          <li><b>Title</b> - makes the line a heading; tap again for a smaller
+          one, again to put it back to normal.</li>
+          <li><b>B</b> and <b>I</b> - bold and italic, on the selection or the
+          word being typed.</li>
+          <li><b>List</b>, <b>1. List</b>, <b>Task</b> - turn the lines into
+          bullets, numbers or tick boxes. Tap a box to tick it. Enter on an
+          empty item leaves the list.</li>
+          <li><b>Quote</b> and <b>Line</b> - an indented quote, or a divider
+          across the scroll.</li>
+          <li><b>Table</b> - choose the size, then tap any cell to fill it. With
+          the caret inside a table the same rune adds or removes rows and
+          columns.</li>
+          <li><b>Date</b> - a date, a time, or both, in the style you pick.</li>
+          <li><b>Photo</b> - a picture from the camera or the library.</li>
+        </ul>
+        <p class="md__p">Underneath, a scroll is still stored as plain text, so
+        copying one out gives you something readable anywhere.</p>
       </div>`,
     buttons: [{ label: 'Got it', value: true, cls: 'btn--gold' }],
   });
 }
 
 /**
- * Wires a rune bar to a textarea.
- * `onPhoto` is called when the photo rune is tapped (optional).
+ * Wires a rune bar to a contenteditable.
+ * `onEdit` is called whenever the text changed, `onPhoto` for the camera.
  */
-export function bindRunebar(root, ta, { onPhoto = null } = {}) {
+export function bindRunebar(root, editable, { onPhoto = null, onEdit = () => {} } = {}) {
+  // a button that takes focus takes the caret with it, and the command
+  // would then have nothing to act on
+  ['mousedown', 'pointerdown'].forEach((ev) => root.addEventListener(ev, (e) => {
+    if (e.target.closest('[data-rune]')) e.preventDefault();
+  }));
+
   U.bind(root, '[data-rune]', async (el) => {
     const id = el.dataset.rune;
-    switch (id) {
-      case 'head':
-        toggleLines(ta, '# ', (l) => /^\s*#{1,3}\s+/.test(l));
-        break;
-      case 'bold': wrap(ta, '**', '**', 'bold'); break;
-      case 'ital': wrap(ta, '*', '*', 'italic'); break;
-      case 'bullet':
-        toggleLines(ta, '- ', (l) => /^\s*[-*]\s+/.test(l) && !/^\s*[-*]\s*\[/.test(l));
-        break;
-      case 'number':
-        toggleLines(ta, (i) => `${i + 1}. `, (l) => /^\s*\d+[.)]\s+/.test(l));
-        break;
-      case 'task':
-        toggleLines(ta, '- [ ] ', (l) => /^\s*[-*]\s*\[[ xX]\]/.test(l));
-        break;
-      case 'quote':
-        toggleLines(ta, '> ', (l) => /^\s*>\s?/.test(l));
-        break;
-      case 'rule': block(ta, '---'); break;
-      case 'table': await tableFlow(ta); break;
-      case 'stamp': {
-        const t = await pickStamp();
-        if (t) { put(ta, t); Au.play('coin'); }
-        break;
-      }
-      case 'photo': if (onPhoto) await onPhoto(); break;
-      case 'help': await helpDialog(); break;
-    }
-  }, 'select');
-}
 
-/**
- * Continues a list when Enter is pressed at the end of one -
- * the small courtesy that makes bullets usable on a phone.
- */
-export function autoList(ta) {
-  ta.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter' || e.shiftKey) return;
-    const s = ta.selectionStart;
-    if (s !== ta.selectionEnd) return;
-    const lineStart = ta.value.lastIndexOf('\n', s - 1) + 1;
-    const line = ta.value.slice(lineStart, s);
-    const m = /^(\s*)([-*]\s\[[ xX]\]\s|[-*]\s|(\d+)[.)]\s)(.*)$/.exec(line);
-    if (!m) return;
-    e.preventDefault();
-    if (!m[4].trim()) {           // empty item - end the list instead
-      put(ta, '\n', { start: lineStart, end: s });
+    if (id === 'photo') { if (onPhoto) await onPhoto(); return; }
+    if (id === 'help') { await helpDialog(); return; }
+
+    if (id === 'table') {
+      const changed = R.inTable(editable) ? await tableMenu(editable) : (await tableFlow(editable), true);
+      if (changed) onEdit();
       return;
     }
-    let marker = m[2];
-    if (m[3]) marker = `${Number(m[3]) + 1}. `;
-    else if (/\[[xX]\]/.test(marker)) marker = marker.replace(/\[[xX]\]/, '[ ]');
-    put(ta, `\n${m[1]}${marker}`);
-  });
+
+    if (id === 'stamp') {
+      const t = await pickStamp();
+      if (!t) return;
+      R.insertText(editable, t);
+      Au.play('coin');
+      onEdit();
+      return;
+    }
+
+    if (R.apply(editable, id)) onEdit();
+  }, 'select');
 }

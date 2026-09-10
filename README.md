@@ -7,8 +7,9 @@ and no network call once the page has loaded.
 - **Scrolls** — notes, filed in **chambers** (folders) that nest as deep as you like
 - **Chronicle** — one journal entry per day, with a mood and a month calendar
 - **Rune bar** — headings, bullets, numbered lists, tick boxes, quotes, dividers,
-  tables and a date & time stamp, in scrolls and chronicle entries alike; **READ**
-  lays it all out, and tick boxes can be ticked from there
+  tables and a date & time stamp, in scrolls and chronicle entries alike. Formatting
+  is applied as you write: a bullet looks like a bullet, a table like a table, with
+  no markup characters to type and no reading mode to switch to
 - **Pictures** — a few reference photos per scroll or entry, shrunk (and optionally
   redrawn in the 8-bit palette) and kept in this device's offline database
 - **Quests** — to-dos with difficulty, due dates and sub-steps; finishing them earns XP
@@ -159,8 +160,9 @@ js/
   sprites.js               pixel art as ASCII maps, rendered to inline SVG
   ui.js                    dialogs, action sheets, toasts, particles
   actions.js               flows shared by views (create, move, menus)
-  textkit.js               the rune bar: list/table/date tools over a textarea
-  markup.js                the small plain-text markup the reader lays out
+  textkit.js               the rune bar, the table builder and the date stamp
+  richtext.js              the editable: markup in, markup out, formatting live
+  markup.js                the small plain-text markup everything is stored as
   media.js                 photo shrinking, palette mapping, IndexedDB store
   photos.js                attaching, the thumbnail strip and the viewer
   update.js                the update check, prompt and reload
@@ -197,17 +199,21 @@ the JSON document keeps only a small record of what is attached to what. A pictu
 no scroll or entry pointing at it is deleted automatically. Current usage of both is
 shown in **Options → Storage used**.
 
-**Text stays text.** The rune bar writes plain characters (`- `, `1. `, `- [ ] `,
-`| a | b |`), so a scroll copied out of the app is still readable anywhere, and the
-markup is a deliberately small subset — no HTML is ever stored.
+**Text stays text.** The editors are `contenteditable`, so formatting shows up as you
+write, but nothing is stored as HTML. `richtext.js` turns the stored plain text into
+the editable view and serialises it straight back on every save (`- `, `1. `,
+`- [ ] `, `| a | b |`, `**bold**`). A scroll copied out of the app is still readable
+anywhere, search and previews work on the same text, and old backups load unchanged.
+The markup is a deliberately small subset; anything it cannot express — a list inside
+a quote, say — is written out beside the quote rather than lost.
 
 **The on-screen keyboard.** iOS shrinks the visual viewport but not the layout one,
 and the app is a fixed shell, so Safari's own attempt to reveal the caret just shoves
 everything upwards and off the screen. `installKeyboardHandling` in `app.js` handles it
 instead: the scrolling area and the dialog layer end above the keyboard, any shift
 Safari applied is put straight back, the field being typed in is parked below the top
-bar with its rune bar still visible, and a tall textarea is given an exact height for
-the room that is left, so it scrolls inside itself and the page never moves.
+bar with its rune bar still visible, and a tall field is given an exact height for the
+room that is left, so it scrolls inside itself and the page never moves.
 
 **Keyboard shortcuts** (useful when testing on a desktop): `1`–`5` switch tabs, `/`
 opens search.

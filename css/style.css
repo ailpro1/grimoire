@@ -1309,8 +1309,10 @@ body.kbd-open .screen { padding-bottom: 20px; }
 .editor__status.is-ok { color: var(--c-ok); }
 .editor__status.is-busy { color: var(--c-warn); }
 .editor__body {
+  position: relative;
   width: 100%;
   min-height: 46vh;
+  overflow-y: auto;
   padding: 10px;
   font-family: var(--f-body);
   font-size: 1.28rem;
@@ -1328,6 +1330,20 @@ body.kbd-open .screen { padding-bottom: 20px; }
 }
 .editor__body--tall { min-height: 52vh; }
 .editor__body:focus { outline: 3px solid var(--c-gold); }
+
+/* the writing area is contenteditable, so the placeholder is ours to
+   draw and the tick boxes must not take the caret */
+.editor__body[contenteditable] { -webkit-user-modify: read-write; caret-color: var(--c-gold); }
+.editor__body.is-empty::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  top: 10px; left: 10px; right: 10px;
+  color: var(--c-dim);
+  opacity: .65;
+  pointer-events: none;
+}
+.editor__body .md__tablewrap { margin: .5em 0; }
+.editor__body > :first-child { margin-top: 0; }
 .editor__foot {
   display: flex;
   justify-content: space-between;
@@ -1685,22 +1701,23 @@ body.kbd-open .screen { padding-bottom: 20px; }
   min-height: 46vh;
   user-select: text;
 }
-.md__p { margin: 0 0 .6em; }
-.md__h { margin: .4em 0 .35em; font-family: var(--f-display); color: var(--c-gold); }
-.md__h--1 { font-size: .82rem; }
-.md__h--2 { font-size: .72rem; }
-.md__h--3 { font-size: .64rem; color: var(--c-accent); }
-.md__list { margin: 0 0 .6em; padding-left: 1.3em; }
-.md__list li { margin: .1em 0; }
-.md__list li::marker { color: var(--c-gold); }
-.md__quote {
+.md__p, .md p { margin: 0 0 .6em; }
+.md__h, .md h2, .md h3, .md h4 { margin: .4em 0 .35em; font-family: var(--f-display);
+  color: var(--c-gold); }
+.md__h--1, .md h2 { font-size: .82rem; }
+.md__h--2, .md h3 { font-size: .72rem; }
+.md__h--3, .md h4 { font-size: .64rem; color: var(--c-accent); }
+.md__list, .md ul, .md ol { margin: 0 0 .6em; padding-left: 1.3em; }
+.md__list li, .md li { margin: .1em 0; }
+.md li::marker { color: var(--c-gold); }
+.md__quote, .md blockquote {
   margin: 0 0 .6em;
   padding: .3em .6em;
   color: var(--c-dim);
   border-left: 4px solid var(--c-gold-dk);
   background: rgba(255,255,255,.04);
 }
-.md__rule {
+.md__rule, .md hr {
   height: 0;
   margin: .7em 0;
   border: 0;
@@ -1715,10 +1732,12 @@ body.kbd-open .screen { padding-bottom: 20px; }
 }
 .md__empty { color: var(--c-dim); }
 
-.md__task { list-style: none; display: flex; align-items: flex-start; gap: 8px; }
+.md__task, .md li[data-task] { list-style: none; display: flex; align-items: flex-start; gap: 8px; }
 .md__list--tasks { padding-left: 0; }
 .md__box {
   flex: none;
+  user-select: none;
+  -webkit-user-select: none;
   width: 22px; height: 22px;
   margin-top: 2px;
   padding: 0;
@@ -1729,25 +1748,25 @@ body.kbd-open .screen { padding-bottom: 20px; }
   background: var(--c-void);
   border: 3px solid var(--c-edge);
 }
-.md__task.is-done > span { color: var(--c-dim); text-decoration: line-through; }
+.md li[data-task="x"] { color: var(--c-dim); text-decoration: line-through; }
 
 .md__tablewrap { overflow-x: auto; margin: 0 0 .6em; scrollbar-width: none; }
 .md__tablewrap::-webkit-scrollbar { display: none; }
-.md__table {
+.md__table, .md table {
   border-collapse: collapse;
   width: 100%;
   font-family: var(--f-ui);
   font-size: .68rem;
 }
-.md__table th, .md__table td {
+.md__table th, .md__table td, .md table th, .md table td {
   padding: .45em .5em;
   text-align: left;
   border: 2px solid var(--c-line);
 }
-.md__table th { color: var(--c-void); background: var(--c-gold); text-transform: uppercase; }
-.md__table td { background: var(--c-panel); }
-.md__table tr:nth-child(even) td { background: var(--c-panel-2); }
-.md--help .md__table { font-size: .62rem; }
+.md table th { color: var(--c-void); background: var(--c-gold); text-transform: uppercase; }
+.md table td { background: var(--c-panel); }
+.md table tr:nth-child(even) td { background: var(--c-panel-2); }
+.md--help .md__table, .md table { font-size: .62rem; }
 
 /* stepper (table builder) -------------------------------------- */
 

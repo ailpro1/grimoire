@@ -35,6 +35,7 @@ const CODE = [
   './js/sprites.js',
   './js/actions.js',
   './js/textkit.js',
+  './js/richtext.js',
   './js/markup.js',
   './js/media.js',
   './js/photos.js',

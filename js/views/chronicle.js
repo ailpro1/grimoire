@@ -7,6 +7,7 @@ import * as S from '../store.js';
 import * as U from '../ui.js';
 import * as Au from '../audio.js';
 import * as TK from '../textkit.js';
+import * as R from '../richtext.js';
 import * as MD from '../markup.js';
 import * as PH from '../photos.js';
 import { icon } from '../sprites.js';
@@ -239,19 +240,15 @@ function dayView({ date, api }) {
         placeholder="A title for the day (optional)" value="${U.esc(e?.title || '')}"
         autocapitalize="sentences" enterkeyhint="next">
       <div class="editor__bar">
-        <button type="button" class="chip chip--mode" data-act="mode">
-          ${icon('glass', 2)}<span>Read</span>
-        </button>
         <span class="editor__status" id="j-status">${e ? 'saved' : 'not yet written'}</span>
       </div>
 
       ${TK.runebar()}
 
-      <textarea id="j-body" class="editor__body editor__body--tall"
-        placeholder="What happened? What did you notice? What will you remember?"
-        autocapitalize="sentences" spellcheck="true">${U.esc(e?.body || '')}</textarea>
-
-      <div class="md" id="j-read" hidden></div>
+      <div id="j-body" class="editor__body editor__body--tall md" contenteditable="true"
+        role="textbox" aria-multiline="true" aria-label="Today's entry"
+        data-placeholder="What happened? What did you notice? What will you remember?"
+        autocapitalize="sentences" spellcheck="true">${R.toHTML(e?.body || '')}</div>
 
       ${PH.galleryShell()}
 
@@ -273,21 +270,19 @@ function dayView({ date, api }) {
       const body = root.querySelector('#j-body');
       const status = root.querySelector('#j-status');
       const count = root.querySelector('#j-count');
-      const reader = root.querySelector('#j-read');
-      const runes = root.querySelector('.runebar');
-      const modeChip = root.querySelector('[data-act="mode"]');
       let dirty = false;
-      let reading = false;
       let curMood = mood;
 
+      const text = () => R.toMarkup(body);
+
       const save = U.debounce(() => {
-        if (!title.value.trim() && !body.value.trim()) {
+        if (!title.value.trim() && !text()) {
           status.textContent = 'nothing to save yet';
           dirty = false;
           return;
         }
         const existed = !!S.journalFor(date);
-        S.upsertJournal(date, { title: title.value, body: body.value, mood: curMood, __silent: true });
+        S.upsertJournal(date, { title: title.value, body: text(), mood: curMood, __silent: true });
         dirty = false;
         status.textContent = 'saved';
         status.className = 'editor__status is-ok';
@@ -302,12 +297,13 @@ function dayView({ date, api }) {
         dirty = true;
         status.textContent = 'writing...';
         status.className = 'editor__status is-busy';
-        const w = body.value.trim() ? body.value.trim().split(/\s+/).length : 0;
+        const words = (body.innerText || '').trim();
+        const w = words ? words.split(/\s+/).length : 0;
         count.textContent = `${w} word${w === 1 ? '' : 's'}`;
         save();
       };
       title.addEventListener('input', onEdit);
-      body.addEventListener('input', onEdit);
+      R.bindEditable(body, { onEdit });
       title.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter') { ev.preventDefault(); body.focus(); }
       });
@@ -318,7 +314,7 @@ function dayView({ date, api }) {
         el.classList.add('is-on');
         Au.play('toggle');
         U.sparkle(el, { count: 6 });
-        if (S.journalFor(date) || title.value.trim() || body.value.trim()) { dirty = true; save(); }
+        if (S.journalFor(date) || title.value.trim() || text()) { dirty = true; save(); }
       }, null);
 
       U.bind(root, '[data-nav]', (el) => {
@@ -337,13 +333,14 @@ function dayView({ date, api }) {
         document.removeEventListener('visibilitychange', flush);
       });
 
-      /* ---- rune bar, photos and the reader ---- */
+      /* ---- rune bar and photos ---- */
 
       TK.bindRunebar(root, body, {
+        onEdit,
         onPhoto: async () => {
           // an entry must exist before a picture can hang off it
           if (!S.journalFor(date)) {
-            S.upsertJournal(date, { title: title.value, body: body.value, mood: curMood });
+            S.upsertJournal(date, { title: title.value, body: text(), mood: curMood });
           } else {
             flush();
           }
@@ -351,33 +348,8 @@ function dayView({ date, api }) {
           if (added) await PH.mountGallery(root, 'journal', date);
         },
       });
-      TK.autoList(body);
 
       PH.mountGallery(root, 'journal', date);
-
-      const drawReader = () => {
-        reader.innerHTML = MD.render(body.value);
-        reader.querySelectorAll('[data-task]').forEach((b) => {
-          b.addEventListener('click', () => {
-            const next = MD.toggleTask(body.value, Number(b.dataset.task));
-            if (next == null) return;
-            Au.play('check');
-            body.value = next;
-            onEdit();
-            drawReader();
-          });
-        });
-      };
-
-      U.bind(root, '[data-act="mode"]', () => {
-        reading = !reading;
-        body.hidden = reading;
-        runes.hidden = reading;
-        reader.hidden = !reading;
-        modeChip.classList.toggle('is-on', reading);
-        modeChip.querySelector('span').textContent = reading ? 'Write' : 'Read';
-        if (reading) { flush(); drawReader(); }
-      }, 'toggle');
 
       if (!e) setTimeout(() => body.focus(), 340);
     },

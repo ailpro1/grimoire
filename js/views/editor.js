@@ -8,7 +8,7 @@ import * as U from '../ui.js';
 import * as A from '../actions.js';
 import * as Au from '../audio.js';
 import * as TK from '../textkit.js';
-import * as MD from '../markup.js';
+import * as R from '../richtext.js';
 import * as PH from '../photos.js';
 import { icon } from '../sprites.js';
 
@@ -45,18 +45,14 @@ export default function editor({ params, api }) {
         <button type="button" class="chip ${n.pinned ? 'is-on' : ''}" data-act="pin">
           ${icon('star', 2)}<span>${n.pinned ? 'Pinned' : 'Pin'}</span>
         </button>
-        <button type="button" class="chip chip--mode" data-act="mode">
-          ${icon('glass', 2)}<span>Read</span>
-        </button>
         <span class="editor__status" id="ed-status">saved</span>
       </div>
 
       ${TK.runebar()}
 
-      <textarea id="ed-body" class="editor__body" placeholder="Write it down..."
-        autocapitalize="sentences" spellcheck="true">${U.esc(n.body)}</textarea>
-
-      <div class="md" id="ed-read" hidden></div>
+      <div id="ed-body" class="editor__body md" contenteditable="true" role="textbox"
+        aria-multiline="true" aria-label="The scroll" data-placeholder="Write it down..."
+        autocapitalize="sentences" spellcheck="true">${R.toHTML(n.body)}</div>
 
       ${PH.galleryShell()}
 
@@ -82,11 +78,7 @@ export default function editor({ params, api }) {
       const body = root.querySelector('#ed-body');
       const status = root.querySelector('#ed-status');
       const count = root.querySelector('#ed-count');
-      const reader = root.querySelector('#ed-read');
-      const runes = root.querySelector('.runebar');
-      const modeChip = root.querySelector('[data-act="mode"]');
       let dirty = false;
-      let reading = false;
 
       const flash = (text, cls = '') => {
         status.textContent = text;
@@ -94,7 +86,7 @@ export default function editor({ params, api }) {
       };
 
       const save = U.debounce(() => {
-        S.updateNote(n.id, { title: title.value, body: body.value, __silent: true });
+        S.updateNote(n.id, { title: title.value, body: R.toMarkup(body), __silent: true });
         dirty = false;
         flash('saved', 'is-ok');
         Au.play('save');
@@ -103,17 +95,19 @@ export default function editor({ params, api }) {
       const onEdit = () => {
         dirty = true;
         flash('writing...', 'is-busy');
-        const w = body.value.trim() ? body.value.trim().split(/\s+/).length : 0;
+        const text = (body.innerText || '').trim();
+        const w = text ? text.split(/\s+/).length : 0;
         count.textContent = `${w} word${w === 1 ? '' : 's'}`;
         save();
       };
 
       title.addEventListener('input', onEdit);
-      body.addEventListener('input', onEdit);
 
       title.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') { e.preventDefault(); body.focus(); }
       });
+
+      R.bindEditable(body, { onEdit });
 
       // Never lose a keystroke: flush on leaving, hiding or closing.
       const flush = () => { if (dirty) save.flush(); };
@@ -126,6 +120,7 @@ export default function editor({ params, api }) {
       });
 
       U.bind(root, '[data-act="move"]', async () => {
+        flush();
         const target = await A.pickFolder({ title: 'Move scroll to', current: n.folderId });
         if (target === undefined) return;
         S.updateNote(n.id, { folderId: target || null });
@@ -134,6 +129,7 @@ export default function editor({ params, api }) {
       }, 'open');
 
       U.bind(root, '[data-act="pin"]', () => {
+        flush();
         S.updateNote(n.id, { pinned: !n.pinned });
         Au.play('coin');
         api.refresh();
@@ -142,43 +138,15 @@ export default function editor({ params, api }) {
       /* ---- the rune bar and its photo button ---- */
 
       TK.bindRunebar(root, body, {
+        onEdit,
         onPhoto: async () => {
           flush();
           const added = await PH.attachFlow('note', n.id);
           if (added) await PH.mountGallery(root, 'note', n.id);
         },
       });
-      TK.autoList(body);
 
       PH.mountGallery(root, 'note', n.id);
-
-      /* ---- read mode: the same text, laid out ---- */
-
-      const drawReader = () => {
-        reader.innerHTML = MD.render(body.value);
-        reader.querySelectorAll('[data-task]').forEach((b) => {
-          b.addEventListener('click', () => {
-            const next = MD.toggleTask(body.value, Number(b.dataset.task));
-            if (next == null) return;
-            Au.play('check');
-            body.value = next;
-            onEdit();
-            drawReader();
-          });
-        });
-      };
-
-      const setMode = (read) => {
-        reading = read;
-        body.hidden = read;
-        runes.hidden = read;
-        reader.hidden = !read;
-        modeChip.classList.toggle('is-on', read);
-        modeChip.querySelector('span').textContent = read ? 'Write' : 'Read';
-        if (read) { flush(); drawReader(); }
-      };
-
-      U.bind(root, '[data-act="mode"]', () => setMode(!reading), 'toggle');
 
       // A brand-new, untouched scroll gets the cursor straight away.
       if (!n.title && !n.body) setTimeout(() => title.focus(), 320);

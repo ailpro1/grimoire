@@ -46,14 +46,14 @@ function table(lines, start) {
 }
 
 /**
- * Renders the grimoire's plain text into HTML.
- * `taskIndex` numbers the checkboxes so the reader can tick them.
+ * Renders the grimoire's plain text into HTML - both for reading and
+ * as the starting point for the editor, which edits this markup
+ * directly (see richtext.js).
  */
 export function render(text) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   const out = [];
   let i = 0;
-  let task = 0;
 
   const flushList = (tag, items, cls = '') => {
     if (!items.length) return;
@@ -86,8 +86,8 @@ export function render(text) {
       while (i < lines.length && /^\s*[-*]\s*\[( |x|X)\]\s?/.test(lines[i])) {
         const m = /^\s*[-*]\s*\[( |x|X)\]\s?(.*)$/.exec(lines[i]);
         const done = m[1].toLowerCase() === 'x';
-        items.push(`<li class="md__task ${done ? 'is-done' : ''}">
-            <button type="button" class="md__box" data-task="${task++}"
+        items.push(`<li class="md__task ${done ? 'is-done' : ''}" data-task="${done ? 'x' : ''}">
+            <button type="button" contenteditable="false" class="md__box"
               aria-pressed="${done}">${done ? '&#10003;' : ''}</button>
             <span>${inline(m[2])}</span></li>`);
         i++;
@@ -153,23 +153,4 @@ export function plain(text) {
     .replace(/[*_~`]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-/**
- * Flips the nth `- [ ]` on or off inside the raw text.
- * Returns the new text, or null when that box is not there.
- */
-export function toggleTask(text, index) {
-  const lines = String(text || '').split('\n');
-  let n = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const m = /^(\s*[-*]\s*\[)( |x|X)(\]\s?.*)$/.exec(lines[i]);
-    if (!m) continue;
-    if (n === index) {
-      lines[i] = `${m[1]}${m[2].toLowerCase() === 'x' ? ' ' : 'x'}${m[3]}`;
-      return lines.join('\n');
-    }
-    n++;
-  }
-  return null;
 }
