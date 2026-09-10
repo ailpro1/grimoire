@@ -18,7 +18,7 @@
    change; ordinary app edits are picked up by the check above.
    ============================================================ */
 
-const CACHE = 'grimoire-v3';
+const CACHE = 'grimoire-v4';
 const FINGERPRINT_KEY = './__grimoire-fingerprint';
 
 /* The files that actually change when the app is edited. These are
